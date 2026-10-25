@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>BRS loading</title>
+<script>
+// BoxRun store probe: keeps text in this page's localStorage (Steam's in-game browser) and answers through the page
+// title, which the game's HTML panel reports to the panel script (HTMLTitle). Requests come in the URL's #fragment,
+// which browsers never send to the server:  #put:<key>:<value>  #get:<key>  #len:<n> (a title n characters long)
+var n = 0;
+function handle() {
+	var h = decodeURIComponent(location.hash.slice(1)), out;
+	n++;
+	try {
+		if (h.indexOf("put:") === 0) {
+			var i = h.indexOf(":", 4);
+			localStorage.setItem("br_" + h.slice(4, i), h.slice(i + 1));
+			out = "ok put " + h.slice(4, i);
+		} else if (h.indexOf("get:") === 0) {
+			var v = localStorage.getItem("br_" + h.slice(4));
+			out = "val " + (v === null ? "-" : v);
+		} else if (h.indexOf("len:") === 0) {
+			out = "len " + new Array(parseInt(h.slice(4), 10) + 1).join("x");
+		} else {
+			out = "ready " + localStorage.length;
+		}
+	} catch (e) { out = "err " + e; }
+	document.title = "BRS " + n + " " + out;
+}
+window.addEventListener("hashchange", handle);
+handle();
+</script>
