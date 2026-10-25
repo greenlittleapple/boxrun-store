@@ -1,29 +1,54 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>BRS loading</title>
+<title>BRS ready</title>
 <script>
-// BoxRun store probe: keeps text in this page's localStorage (Steam's in-game browser) and answers through the page
-// title, which the game's HTML panel reports to the panel script (HTMLTitle). Requests come in the URL's #fragment,
-// which browsers never send to the server:  #put:<key>:<value>  #get:<key>  #len:<n> (a title n characters long)
-var n = 0;
-function handle() {
-	var h = decodeURIComponent(location.hash.slice(1)), out;
-	n++;
-	try {
-		if (h.indexOf("put:") === 0) {
-			var i = h.indexOf(":", 4);
-			localStorage.setItem("br_" + h.slice(4, i), h.slice(i + 1));
-			out = "ok put " + h.slice(4, i);
-		} else if (h.indexOf("get:") === 0) {
-			var v = localStorage.getItem("br_" + h.slice(4));
-			out = "val " + (v === null ? "-" : v);
-		} else if (h.indexOf("len:") === 0) {
-			out = "len " + new Array(parseInt(h.slice(4), 10) + 1).join("x");
-		} else {
-			out = "ready " + localStorage.length;
+// BoxRun store: BoxRun's in-map menu opens this page in Deadlock's built-in browser (a hidden HTML panel) to keep
+// your routes, best times and settings between game sessions. Everything stays in this page's local storage on your
+// PC; requests arrive in the URL's #fragment, which browsers never send to a server, and answers go back through the
+// page title, which the game reads (spike-map/boxrun/README.md, map note MN-322).
+//
+// Request: #<seq>:<op> with op one of (values URL-encoded):
+//   put:<key>:<value>   app:<key>:<value> (append)   del:<key>   dump:<k>   ping
+// Keys: r:<name> a route code, b:<name> its best time, p:<key> a setting.
+// Answer: title "BRS <seq> <reply>"; dump replies "d <k>/<n> <text>", the dump being
+//   "R <name> <best or -> <route code>" and "P <key> <value>" entries joined by " ~~ ", in pieces of 3800 characters
+//   (titles reach the game cut at 4096).
+var KEY = /^[rbp]:[a-z0-9_]{1,40}$/, PIECE = 3800;
+function dump() {
+	var out = [];
+	for (var i = 0; i < localStorage.length; i++) {
+		var k = localStorage.key(i);
+		if (/^r:/.test(k)) {
+			var name = k.slice(2), best = localStorage.getItem("b:" + name);
+			out.push("R " + name + " " + (best || "-") + " " + localStorage.getItem(k));
+		} else if (/^p:/.test(k)) {
+			out.push("P " + k.slice(2) + " " + localStorage.getItem(k));
 		}
-	} catch (e) { out = "err " + e; }
-	document.title = "BRS " + n + " " + out;
+	}
+	return out.sort().join(" ~~ ");
+}
+function answer(op) {
+	var f = op.split(":"), what = f[0];
+	if (what === "ping") return "pong";
+	if (what === "dump") {
+		var text = dump(), n = Math.max(1, Math.ceil(text.length / PIECE)), k = parseInt(f[1], 10) || 0;
+		return "d " + k + "/" + n + " " + text.substr(k * PIECE, PIECE);
+	}
+	var key = f[1] + ":" + f[2];
+	if (!KEY.test(key)) return "bad key";
+	var value = f.slice(3).join(":");
+	if (what === "put") localStorage.setItem(key, value);
+	else if (what === "app") localStorage.setItem(key, (localStorage.getItem(key) || "") + value);
+	else if (what === "del") localStorage.removeItem(key);
+	else return "bad op";
+	return "ok";
+}
+function handle() {
+	var h = location.hash.slice(1), at = h.indexOf(":");
+	if (at < 0) return;
+	var seq = h.slice(0, at), reply;
+	try { reply = answer(decodeURIComponent(h.slice(at + 1))); } catch (e) { reply = "err " + e; }
+	document.title = "BRS " + seq + " " + reply;
 }
 window.addEventListener("hashchange", handle);
 handle();
