@@ -71,7 +71,7 @@ function answer(op) {
 // Job answers: "w" (working), "e <error> <message>", or the result in pieces "d <k>/<n> <text>":
 //   fetch  "R <code>.<version> <latest> <sum> <BR1 code>", then " ~~ G <hero> <souls> <time> <chars> <runner>"
 //          when that version has a ghost
-//   ghost  "G <code>.<version> <hero> <souls> <time> <runner> <BOTREC code>"
+//   ghost  "G <code>.<version> <hero> <souls> <time> <runner> <path step ms or 0> <spot> <BOTREC code>[ <BRGP1 path>]"
 //   pub, upd  "P <code> <version> <sum>" (pub keeps the new edit key as k:<code>)
 //   report "K"
 // Runner names have "_" for spaces and "-" when empty (the route text whitelist has neither "_" nor "~").
@@ -123,7 +123,9 @@ function start(j, verb, args) {
 		return t;
 	});
 	if (verb === "ghost") return call(j, "GET", path + "/ghost", null, null, function (b) {
-		return "G " + b.code + "." + b.version + " " + b.hero + " " + b.souls + " " + b.time + " " + under(b.runner) + " " + b.botrec;
+		if (b.path && !/^BRGP1\.[A-Za-z0-9._]+=*$/.test(b.path)) throw new Error("odd path");
+		return "G " + b.code + "." + b.version + " " + b.hero + " " + b.souls + " " + b.time + " " + under(b.runner) + " " +
+			(b.step || 0) + " " + (b.spot || 0) + " " + b.botrec + (b.path ? " " + b.path : "");
 	});
 	if (verb === "report") return call(j, "POST", path + "/report", JSON.stringify({ reason: args[1] || "other" }), null,
 		function () { return "K"; });
