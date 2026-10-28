@@ -115,6 +115,11 @@ function codeOk(code) { return /^(BR-?)?[0-9A-Z]{6}(\.[0-9]{1,4})?$/i.test(code)
 function under(s) { return s ? String(s).replace(/ /g, "_") : "-"; }
 function start(j, verb, args) {
 	var code = args[0] || "";
+	// the game's own idempotency key, one per route and what's sent (net:<job>:pub:<key>, net:<job>:upd:<code>:<key>):
+	// a publish asked again in a later job (its answer came after the game gave up) gets the first answer back, the
+	// same code and edit key, never a second route. Without one (older games) the job's own key is used.
+	var idem = verb === "pub" ? args[0] : verb === "upd" ? args[1] : "";
+	if (idem && /^[a-z0-9-]{8,64}$/.test(idem)) j.idem = idem;       // the API takes 8-64 characters
 	if (verb !== "pub" && !codeOk(code)) return fail(j, "bad_code not a BoxRun short code");
 	var path = "/routes/" + encodeURIComponent(code);
 	if (verb === "fetch") return call(j, "GET", path, null, null, function (b) {
