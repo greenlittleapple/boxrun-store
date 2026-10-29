@@ -66,14 +66,16 @@ function answer(op) {
 // A job is one request to the API, named by the game (<job>), so asking again after a lost answer finds the same job
 // instead of sending the request twice. Uploads are staged in pieces first; results are read back in pieces.
 //   net:<job>:fetch:<code>   net:<job>:ghost:<code>   net:<job>:pub   net:<job>:upd:<code>
-//   net:<job>:report:<code>:<reason>
+//   net:<job>:report:<code>:<reason>   net:<job>:featured
 // Codes are BR-XXXXXX or BR-XXXXXX.<version>. pub and upd send the staged text, a JSON body {"route", "ghost"?}.
 // Job answers: "w" (working), "e <error> <message>", or the result in pieces "d <k>/<n> <text>":
 //   fetch  "R <code>.<version> <latest> <sum> <BR1 code>", then " ~~ G <hero> <souls> <time> <chars> <runner>"
-//          when that version has a ghost
+//          when that version has a ghost, then " ~~ N <players>" (distinct players who loaded the code, when the
+//          API sends it; older games read neither)
 //   ghost  "G <code>.<version> <hero> <souls> <time> <runner> <path step ms or 0> <spot> <BOTREC code>[ <BRGP1 path>]"
 //   pub, upd  "P <code> <version> <sum>" (pub keeps the new edit key as k:<code>)
 //   report "K"
+//   featured  "F <code>.<version> <name with _ for spaces>" (the week's featured route), or e not_found when none
 // Runner names have "_" for spaces and "-" when empty (the route text whitelist has neither "_" nor "~").
 function online(f) {
 	var what = f[0], id = f[1];
@@ -115,6 +117,10 @@ function codeOk(code) { return /^(BR-?)?[0-9A-Z]{6}(\.[0-9]{1,4})?$/i.test(code)
 function under(s) { return s ? String(s).replace(/ /g, "_") : "-"; }
 function start(j, verb, args) {
 	var code = args[0] || "";
+	if (verb === "featured") return call(j, "GET", "/featured", null, null, function (b) {
+		if (!/^BR-[0-9A-Z]{6}$/.test(b.code) || !(b.version > 0)) throw new Error("odd answer");
+		return "F " + b.code + "." + b.version + " " + under(b.name);
+	});
 	// the game's own idempotency key, one per route and what's sent (net:<job>:pub:<key>, net:<job>:upd:<code>:<key>):
 	// a publish asked again in a later job (its answer came after the game gave up) gets the first answer back, the
 	// same code and edit key, never a second route. Without one (older games) the job's own key is used.
@@ -125,6 +131,7 @@ function start(j, verb, args) {
 	if (verb === "fetch") return call(j, "GET", path, null, null, function (b) {
 		var t = "R " + b.code + "." + b.version + " " + b.latest + " " + b.sum + " " + b.br1;
 		if (b.ghost) t += " ~~ G " + b.ghost.hero + " " + b.ghost.souls + " " + b.ghost.time + " " + b.ghost.chars + " " + under(b.ghost.runner);
+		if (typeof b.players === "number") t += " ~~ N " + b.players;
 		return t;
 	});
 	if (verb === "ghost") return call(j, "GET", path + "/ghost", null, null, function (b) {
