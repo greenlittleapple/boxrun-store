@@ -98,8 +98,8 @@ function piece(key, k, value) {
 //   report "K"
 //   list   "T <code> <1 or 0>": the route listed in COMMUNITY (1) or code only (0), with the stored edit key
 //   featured  "F <code>.<version> <name with _ for spaces>" (the week's featured route) or "F -" when none, then
-//          " ~~ V <latest BoxRun version>", " ~~ M <notice with _ for spaces>" and " ~~ O" (codes switched off), each
-//          only when set; then, when the API has the COMMUNITY shelf, " ~~ L" and one " ~~ S <list> <code>.<version>
+//          " ~~ V <latest BoxRun version>", " ~~ M <notice with _ for spaces>", " ~~ O" (codes switched off) and
+//          " ~~ AG 0" (the puppet's animation graph switched off, admin.py ag off), each only when set; then, when the API has the COMMUNITY shelf, " ~~ L" and one " ~~ S <list> <code>.<version>
 //          <map> <kind or -> <checkpoints> <boxes> <urn 0/1> <hero or -> <gold/silver/bronze or -> <players> <name>
 //          <maker or ->" per route (list: pick, featured, popular, new; names with _ for spaces). featured:0 (counts off)
 //          asks /featured?count=0, which the server limits under its own name and the stats never read.
@@ -317,6 +317,7 @@ function start(j, verb, args) {
 		if (b.latest && /^\d{1,3}(\.\d{1,3}){0,2}$/.test(b.latest)) t += " ~~ V " + b.latest;
 		if (b.notice) t += " ~~ M " + under(String(b.notice).replace(/~/g, ""));
 		if (b.codes === "off") t += " ~~ O";
+		if (b.ag === "off") t += " ~~ AG 0";
 		if (b.shelf) t += " ~~ L" + shelfText(b.shelf);
 		if (b.board) t += boardText(b.board);
 		return t;
