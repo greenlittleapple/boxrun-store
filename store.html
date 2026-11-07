@@ -113,7 +113,8 @@ function piece(key, k, value) {
 //   week:<week id>   (a week id is its first Pacific day, 2026-11-02, or 2026-11-02-2 for a second week opened that day)
 //          "Y <entry> <time> <runs> <place> <runs place> <of> <status> <name>" (places "-" while held) and
 //          the board's segments as featured has them; "Y -" with no entry. Without a key for that week it answers
-//          "Y -" from here, with no request.
+//          "Y -" from here, with no request. Then the entries just above and below yours, " ~~ YF <place> <entry> <hero>
+//          <time> <name>" and " ~~ YM <place> <entry> <runs> <name>" (the API's you.near); older games skip them.
 //   wsend:<idempotency key>:<week id>   the staged entry (POST /week/entry): "E <entry> <time> <runs> <best 1/0> <place>
 //          <runs place> <of> <week id>"; a new entry's key is kept as k:week before the game hears of it
 //   wdrop:<week id>   the entry and its ghost taken off (POST /week/withdraw): "K", and k:week goes
@@ -184,7 +185,7 @@ function shelfText(sh) {
 }
 // The anonymous counts (docs/BOXRUN-MEASUREMENT.md 5.4): the body is rebuilt from these fields alone, in this order, and
 // anything else the game put in is left out. Refused (the job fails) when a field is missing or out of range.
-var COUNT_STEPS = ["load", "menu", "start", "finish", "count", "make", "import", "community"], COUNT_MIN = [0, 1, 2, 5, 10, 30, 60, 1440];
+var COUNT_STEPS = ["load", "menu", "seen", "shot", "press", "go", "ready", "start", "finish", "count", "make", "import", "community"], COUNT_MIN = [0, 1, 2, 5, 10, 30, 60, 1440];
 var COUNT_KINDS = ["sample", "pack", "community", "own"], COUNT_RUNS = ["start", "finish", "count"], COUNT_CODES = 20, COUNT_MAX = 512;
 function countBody(text) {
 	var d = JSON.parse(text), b = {};
@@ -261,6 +262,24 @@ function boardText(bd) {
 	}
 	return t;
 }
+// the entries just above and below yours on each list (GET /week with the key; #4 too when you're #6), as " ~~ YF" and " ~~ YM" segments with
+// WF's and WM's checks: an odd row is left out, never the answer. Older brains skip segments they don't know.
+function nearText(nr) {
+	if (!nr || typeof nr !== "object") return "";
+	var n = function (v, lo, hi) { return typeof v === "number" && v >= lo && v <= hi && Math.floor(v) === v; };
+	var time = function (v) { return typeof v === "number" && v > 0 && v < 10000 ? String(Math.round(v * 1000) / 1000) : ""; };
+	var word = function (v) { return v ? under(String(v).replace(/[~_\s]+/g, " ").trim()) : "-"; };
+	var t = "";
+	(Array.isArray(nr.fastest) ? nr.fastest : []).slice(0, 3).forEach(function (r) {
+		if (r && n(r.place, 1, 9999999) && ENTRY.test(r.entry) && HERO.test(r.hero) && time(r.time) && r.runner)
+			t += " ~~ YF " + r.place + " " + r.entry + " " + r.hero + " " + time(r.time) + " " + word(r.runner);
+	});
+	(Array.isArray(nr.most) ? nr.most : []).slice(0, 3).forEach(function (r) {
+		if (r && n(r.place, 1, 9999999) && ENTRY.test(r.entry) && n(r.runs, 1, 99999) && r.runner)
+			t += " ~~ YM " + r.place + " " + r.entry + " " + r.runs + " " + word(r.runner);
+	});
+	return t;
+}
 function weekKey(wid) {
 	var v = String(localStorage.getItem("k:week") || "").split("|");
 	return /^BRW-[0-9A-Z]{26}$/.test(v[0]) && v[1] === wid ? v[0] : "";
@@ -286,7 +305,7 @@ function weekJob(j, verb, args) {
 			var y = b.you;
 			if (y && !ENTRY.test(y.entry)) throw new Error("odd answer");
 			return (y ? "Y " + y.entry + " " + y.time + " " + y.runs + " " + place(y.place) + " " + place(y.runs_place) + " " + (y.of || 0) + " " +
-				(y.status === "ok" ? "ok" : "held") + " " + under(y.runner) : "Y -") + boardText(b);
+				(y.status === "ok" ? "ok" : "held") + " " + under(y.runner) : "Y -") + boardText(b) + nearText(y && y.near);
 		});
 	}
 	if (verb === "wdrop") {
