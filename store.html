@@ -101,7 +101,8 @@ function piece(key, k, value) {
 //          " ~~ V <latest BoxRun version>", " ~~ M <notice with _ for spaces>", " ~~ O" (codes switched off) and
 //          " ~~ AG 0" (the puppet's animation graph switched off, admin.py ag off), each only when set; then, when the API has the COMMUNITY shelf, " ~~ L" and one " ~~ S <list> <code>.<version>
 //          <map> <kind or -> <checkpoints> <boxes> <urn 0/1> <hero or -> <gold/silver/bronze or -> <players> <name>
-//          <maker or ->" per route (list: pick, featured, popular, new; names with _ for spaces). featured:0 (counts off)
+//          <maker or ->" per route (list: pick, featured, popular, new; names with _ for spaces), each followed by
+//          " ~~ SP <code> <line>" when the API sends the route's line (shelf.py line(); older games skip it). featured:0 (counts off)
 //          asks /featured?count=0, which the server limits under its own name and the stats never read.
 //          Then, when the API has the weekly board (docs/BOXRUN-WEEKLY-BOARD.md 7.4), " ~~ W <week id> <code>.<version> <ends>
 //          <entries>" (" ~~ W -" when no week is on), " ~~ WF <place> <entry> <hero> <time> <name>" per fastest time,
@@ -174,6 +175,9 @@ function shelfText(sh) {
 			t += " ~~ S " + k + " " + c.code + "." + c.version + " " + c.map + " " + (c.kind === "open" || c.kind === "guided" ? c.kind : "-") +
 				" " + c.checkpoints + " " + c.boxes + " " + (c.urn ? 1 : 0) + " " + word(c.hero) + " " + ti + " " + c.players +
 				" " + word(c.name) + " " + word(c.maker);
+			// the route's line for its postcard (shelf.py line(): 6 base-36 characters a point, 2 to 24 points) in a segment
+			// of its own, which older games' shelf reading skips
+			if (typeof c.line === "string" && /^[0-9a-z]{12,144}$/.test(c.line) && c.line.length % 6 === 0) t += " ~~ SP " + c.code + " " + c.line;
 		});
 	});
 	return t;
