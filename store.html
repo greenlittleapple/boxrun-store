@@ -180,7 +180,7 @@ function shelfText(sh) {
 }
 // The anonymous counts (docs/BOXRUN-MEASUREMENT.md 5.4): the body is rebuilt from these fields alone, in this order, and
 // anything else the game put in is left out. Refused (the job fails) when a field is missing or out of range.
-var COUNT_STEPS = ["load", "menu", "start", "finish", "count", "make", "import"], COUNT_MIN = [0, 1, 2, 5, 10, 30, 60, 1440];
+var COUNT_STEPS = ["load", "menu", "start", "finish", "count", "make", "import", "community"], COUNT_MIN = [0, 1, 2, 5, 10, 30, 60, 1440];
 var COUNT_KINDS = ["sample", "pack", "community", "own"], COUNT_RUNS = ["start", "finish", "count"], COUNT_CODES = 20, COUNT_MAX = 512;
 function countBody(text) {
 	var d = JSON.parse(text), b = {};
