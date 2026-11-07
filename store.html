@@ -256,6 +256,8 @@ function boardText(bd) {
 		var f = l.fastest && time(l.fastest.time) && HERO.test(l.fastest.hero) ? l.fastest : null, m = l.most && n(l.most.runs, 1, 99999) ? l.most : null;
 		t += " ~~ WL " + l.code + " " + word(l.name) + " " + (f ? word(f.runner) + " " + time(f.time) + " " + f.hero : "- - -") +
 			" " + (m ? word(m.runner) + " " + m.runs : "- -");
+		// last week's fastest entry while it's kept, for the game's WATCH (its own segment: older brains skip it)
+		if (f && ENTRY.test(f.entry || "")) t += " ~~ WLE " + f.entry;
 	}
 	return t;
 }
