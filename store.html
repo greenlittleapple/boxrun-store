@@ -105,7 +105,8 @@ function piece(key, k, value) {
 //          " ~~ SP <code> <line>" when the API sends the route's line (shelf.py line(); older games skip it). featured:0 (counts off)
 //          asks /featured?count=0, which the server limits under its own name and the stats never read.
 //          Then, when the API has the weekly board (docs/BOXRUN-WEEKLY-BOARD.md 7.4), " ~~ W <week id> <code>.<version> <ends>
-//          <entries>" (" ~~ W -" when no week is on), " ~~ WF <place> <entry> <hero> <time> <name>" per fastest time,
+//          <entries>" (" ~~ W -" when no week is on), " ~~ WC" right after it on a COLLECT week (every marked box must be gone
+//          to, week.COLLECT_R), " ~~ WF <place> <entry> <hero> <time> <name>" per fastest time,
 //          " ~~ WM <place> <entry> <runs> <name>" per most runs, and " ~~ WL <code> <route name> <fastest name> <time>
 //          <hero> <most name> <runs>" for last week's winners ("-" for one that's missing). Older games read none of them.
 //   The weekly board's own jobs (docs/BOXRUN-WEEKLY-BOARD.md 7.4). The entry key is kept as k:week = "BRW-...|<week id>"
@@ -246,6 +247,7 @@ function boardText(bd) {
 	var t = "", w = bd.week, l = bd.last;
 	if (w && WEEK_ID.test(w.id) && /^BR-[0-9A-Z]{6}$/.test(w.code) && n(w.version, 1, 9999) && n(w.ends, 0, 9999999999) && n(w.entries, 0, 9999999)) {
 		t += " ~~ W " + w.id + " " + w.code + "." + w.version + " " + w.ends + " " + w.entries;
+		if (w.collect === true) t += " ~~ WC";        // a COLLECT week (SAFE-15): its own segment, older brains skip it
 		(Array.isArray(w.fastest) ? w.fastest : []).slice(0, 5).forEach(function (r) {
 			if (r && n(r.place, 1, 9) && ENTRY.test(r.entry) && HERO.test(r.hero) && time(r.time) && r.runner)
 				t += " ~~ WF " + r.place + " " + r.entry + " " + r.hero + " " + time(r.time) + " " + word(r.runner);
