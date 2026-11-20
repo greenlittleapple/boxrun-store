@@ -177,7 +177,8 @@ function under(s) { return s ? String(s).replace(/ /g, "_") : "-"; }
 // list (shelf.py LIST_MAX, 120 since 11-18 so the library holds every listed route; 40 from 11-08; was 12).
 // Route finding (11-18, work/routefind/design-D BUILD.md piece 2), once a route, in segments older games skip:
 // " ~~ ST <code> <TAG,TAG,... or -> <main> <souls>" (tags with _ for spaces), " ~~ SV <code> <creator> <m:ss> <title>"
-// (BoxRun's video credit), " ~~ SN <code>" (listed in the last 7 days with a ghost); and the samples' cards as
+// (BoxRun's video credit), " ~~ SN <code>" (listed in the last 7 days with a ghost), " ~~ SG <code> <seconds>" (3.0.1:
+// the latest version's route ghost time, to 2 places, for FARM's sort; 3.0 games skip it); and the samples' cards as
 // " ~~ S samples ..." (their players this week), a list older games' shelf reading doesn't match.
 var SHELF_MAX = 120, TAG_RE = /^[A-Z][A-Z ]{1,15}$/;
 function shelfText(sh) {
@@ -207,6 +208,7 @@ function shelfText(sh) {
 				/^(\d{1,2}:)?\d{1,2}:\d\d$/.test(v.time || ""))
 				t += " ~~ SV " + c.code + " " + word(v.creator.slice(0, 32)) + " " + v.time + " " + word(v.title.slice(0, 60));
 			if (c["new"] === true) t += " ~~ SN " + c.code;
+			if (typeof c.ghost_time === "number" && c.ghost_time > 0 && c.ghost_time <= 3600) t += " ~~ SG " + c.code + " " + Math.round(c.ghost_time * 100) / 100;
 		});
 	});
 	return t;
