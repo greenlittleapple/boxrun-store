@@ -174,13 +174,13 @@ function code6(code) { return String(code).toUpperCase().replace(/^BR-?/, "").sp
 function codeOk(code) { return /^(BR-?)?[0-9A-Z]{6}(\.[0-9]{1,4})?$/i.test(code); }
 function under(s) { return s ? String(s).replace(/ /g, "_") : "-"; }
 // the COMMUNITY shelf's routes as " ~~ S ..." segments; an odd item is left out, never the answer. Up to SHELF_MAX a
-// list (shelf.py LIST_MAX, 120 since 11-18 so the library holds every listed route; 40 from 11-08; was 12).
+// list (shelf.py LIST_MAX, 170 since 11-20 (lens 11-21), 120 from 11-18; 40 from 11-08; was 12).
 // Route finding (11-18, work/routefind/design-D BUILD.md piece 2), once a route, in segments older games skip:
 // " ~~ ST <code> <TAG,TAG,... or -> <main> <souls>" (tags with _ for spaces), " ~~ SV <code> <creator> <m:ss> <title>"
 // (BoxRun's video credit), " ~~ SN <code>" (listed in the last 7 days with a ghost), " ~~ SG <code> <seconds>" (3.0.1:
 // the latest version's route ghost time, to 2 places, for FARM's sort; 3.0 games skip it); and the samples' cards as
 // " ~~ S samples ..." (their players this week), a list older games' shelf reading doesn't match.
-var SHELF_MAX = 120, TAG_RE = /^[A-Z][A-Z ]{1,15}$/;
+var SHELF_MAX = 170, TAG_RE = /^[A-Z][A-Z ]{1,15}$/;
 function shelfText(sh) {
 	var t = "", n = function (v, max) { return typeof v === "number" && v >= 0 && v <= max && Math.floor(v) === v; };
 	var word = function (v) { return v ? under(String(v).replace(/[~_\s]+/g, " ").trim()) : "-"; };
