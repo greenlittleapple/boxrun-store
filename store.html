@@ -502,10 +502,12 @@ function start(j, verb, args) {
 		if (!mk) return fail(j, "no_key this PC has no edit key for " + code);
 		return call(j, "GET", "/routes/" + code6(code) + "/stats", null, mk, function (b) {
 			var c = function (v) { return typeof v === "number" && v >= 0 && v <= 99999999 && Math.floor(v) === v; };
-			if (!/^BR-[0-9A-Z]{6}$/.test(b.code) || !["players_week", "players", "runners", "started_week", "finished_week"].every(function (k) { return c(b[k]); }))
+			// the week's started and finished counts are null until they cover 7 full days (3.2 hand test 1): "-"
+			if (!/^BR-[0-9A-Z]{6}$/.test(b.code) || !["players_week", "players", "runners"].every(function (k) { return c(b[k]); }) ||
+				!["started_week", "finished_week"].every(function (k) { return b[k] === null || c(b[k]); }))
 				throw new Error("odd answer");
 			var rate = typeof b.finish_rate === "number" && b.finish_rate >= 0 && b.finish_rate <= 1 ? String(Math.round(b.finish_rate * 1000) / 1000) : "-";
-			return "MS " + b.code + " " + b.players_week + " " + b.players + " " + b.runners + " " + b.started_week + " " + b.finished_week + " " + rate;
+			return "MS " + b.code + " " + b.players_week + " " + b.players + " " + b.runners + " " + (b.started_week === null ? "-" : b.started_week) + " " + (b.finished_week === null ? "-" : b.finished_week) + " " + rate;
 		});
 	}
 	var body = j.staged.join("");
