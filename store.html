@@ -110,7 +110,8 @@ function piece(key, k, value) {
 //          " ~~ WM <place> <entry> <runs> <name>" per most runs, and " ~~ WL <code> <route name> <fastest name> <time>
 //          <hero> <most name> <runs>" for last week's winners ("-" for one that's missing), and " ~~ WN <n> <prev week id or ->"
 //          right after W's line (or WC's) when the API numbers its weeks (FIND-15), and " ~~ WLN <last week's id> <n>"
-//          after WL (and WLE). Older games read none of them.
+//          after WL (and WLE). Older games read none of them. 3.2: " ~~ WK <maker>" after the week's WM rows, the maker
+//          the week rolled with (week.open_week; not the route's latest credit), when the week has one.
 //   The weekly board's own jobs (docs/BOXRUN-WEEKLY-BOARD.md 7.4). Each week's entry key is kept as k:week:<week id> =
 //   "BRW-..." (and the latest as k:week = "BRW-...|<week id>", which pages before 11-12 kept: read for its week too) and
 //   sent only for its own week; the game never reads them.
@@ -119,8 +120,10 @@ function piece(key, k, value) {
 //          the board's segments as featured has them; "Y -" with no entry. Without a key for that week it answers
 //          "Y -" from here, with no request. Then the entries just above and below yours, " ~~ YF <place> <entry> <hero>
 //          <time> <name>" and " ~~ YM <place> <entry> <runs> <name>" (the API's you.near); older games skip them.
-//   wsend:<idempotency key>:<week id>   the staged entry (POST /week/entry): "E <entry> <time> <runs> <best 1/0> <place>
-//          <runs place> <of> <week id>"; a new entry's key is kept as k:week before the game hears of it
+//   wsend:<idempotency key>:<week id>[:2]   the staged entry (POST /week/entry): "E <entry> <time> <runs> <best 1/0> <place>
+//          <runs place> <of> <week id>"; a new entry's key is kept as k:week before the game hears of it. With ":2" (3.2
+//          games) and the name the send carried kept (a board name changes once a UTC day), then " ~~ EN <unix time it
+//          can change> <the name on the board>"; without ":2" the E line alone, as older games read it
 //   wdrop:<week id>   the entry and its ghost taken off that week (POST /week/withdraw?week=<id>): "K", and its key goes
 //   wghost:<entry>[:<week id>]   an entry's ghost (from that week), answered as ghost is (the code "-" for a week whose
 //          route isn't known)
@@ -128,8 +131,13 @@ function piece(key, k, value) {
 //          "P <id> <n> <prev or -> <next or -> <live 1/0> <code>.<version> <ends or ended> <entries> <collect 1/0> <route
 //          name>", then " ~~ PF <place> <entry or -> <hero> <time> <name>" per fastest row, " ~~ PM <place> <entry or ->
 //          <runs> <name>" per most-runs row, and with your entry " ~~ PY <entry> <time> <runs> <place> <runs place> <of>
-//          <status> <name>" (Y's fields). An odd row is left out.
+//          <status> <name>" (Y's fields). An odd row is left out. 3.2: " ~~ PK <maker>" after the PM rows (before PY),
+//          the maker that week rolled with, when it has one.
 //   wrep:<entry>:<reason>   a report (time, ghost, name or other): "K"
+//   mstats:<code>   (3.2) your route's numbers, with this PC's edit key (GET /routes/<code>/stats): "MS <code>
+//          <players this week> <players> <runners> <started this week> <finished this week> <finish rate 0-1 or ->",
+//          the rate "-" under 20 started; "e no_key ..." without the key. An older page answers "e bad_request nothing
+//          was staged"
 //   count  "K" once the server took it: one anonymous count, sent as text/plain with no cookies, key or other header,
 //          sent once, never tried again: the server adds every count it gets, so a second try after a lost answer
 //          could double it, and a lost one only undercounts. "e not_found" when the API has no /v1/count (a 404), so
@@ -320,6 +328,7 @@ function boardText(bd) {
 			if (r && n(r.place, 1, 9) && ENTRY.test(r.entry) && n(r.runs, 1, 99999) && r.runner)
 				t += " ~~ WM " + r.place + " " + r.entry + " " + r.runs + " " + word(r.runner);
 		});
+		if (typeof w.maker === "string" && w.maker.trim()) t += " ~~ WK " + word(w.maker.slice(0, 32));    // 3.2: the rolled maker
 	} else t += " ~~ W -";
 	if (l && /^BR-[0-9A-Z]{6}$/.test(l.code)) {
 		var f = l.fastest && time(l.fastest.time) && HERO.test(l.fastest.hero) ? l.fastest : null, m = l.most && n(l.most.runs, 1, 99999) ? l.most : null;
@@ -384,6 +393,7 @@ function pageText(b, key) {
 		if (r && n(r.place, 1, 9) && (r.entry === undefined || ENTRY.test(r.entry)) && n(r.runs, 1, 99999) && r.runner)
 			t += " ~~ PM " + r.place + " " + (r.entry || "-") + " " + r.runs + " " + word(r.runner);
 	});
+	if (typeof b.maker === "string" && b.maker.trim()) t += " ~~ PK " + word(b.maker.slice(0, 32));       // 3.2: the rolled maker
 	var y = key && b.you;
 	if (y && ENTRY.test(y.entry) && time(y.time))
 		t += " ~~ PY " + y.entry + " " + y.time + " " + y.runs + " " + place(y.place) + " " + place(y.runs_place) + " " + (y.of || 0) + " " +
@@ -426,8 +436,10 @@ function weekJob(j, verb, args) {
 	return call(j, "POST", "/week/entry", body, key || null, function (b) {
 		if (!ENTRY.test(b.entry) || !WEEK_ID.test(b.week) || (b.key && !/^BRW-[0-9A-Z]{26}$/.test(b.key))) throw new Error("odd answer");
 		if (b.key) weekKeep(b.week, b.key);                                 // kept before the game hears of it
+		var kept = args[2] === "2" && b.name_kept === true && typeof b.name_from === "number" && b.name_from > 0 && b.runner ?
+			" ~~ EN " + Math.floor(b.name_from) + " " + under(String(b.runner).replace(/[~_\s]+/g, " ").trim()) : "";
 		return "E " + b.entry + " " + b.time + " " + b.runs + " " + (b.best ? 1 : 0) + " " + place(b.place) + " " + place(b.runs_place) +
-			" " + (b.of || 0) + " " + b.week;
+			" " + (b.of || 0) + " " + b.week + kept;
 	});
 }
 function start(j, verb, args) {
@@ -483,6 +495,17 @@ function start(j, verb, args) {
 		return call(j, "POST", path + "/listing", JSON.stringify({ listed: args[1] === "1" }), lk, function (b) {
 			if (!/^BR-[0-9A-Z]{6}$/.test(b.code) || typeof b.listed !== "boolean") throw new Error("odd answer");
 			return "T " + b.code + " " + (b.listed ? 1 : 0);
+		});
+	}
+	if (verb === "mstats") {
+		var mk = localStorage.getItem("k:" + code6(code).toLowerCase());
+		if (!mk) return fail(j, "no_key this PC has no edit key for " + code);
+		return call(j, "GET", "/routes/" + code6(code) + "/stats", null, mk, function (b) {
+			var c = function (v) { return typeof v === "number" && v >= 0 && v <= 99999999 && Math.floor(v) === v; };
+			if (!/^BR-[0-9A-Z]{6}$/.test(b.code) || !["players_week", "players", "runners", "started_week", "finished_week"].every(function (k) { return c(b[k]); }))
+				throw new Error("odd answer");
+			var rate = typeof b.finish_rate === "number" && b.finish_rate >= 0 && b.finish_rate <= 1 ? String(Math.round(b.finish_rate * 1000) / 1000) : "-";
+			return "MS " + b.code + " " + b.players_week + " " + b.players + " " + b.runners + " " + b.started_week + " " + b.finished_week + " " + rate;
 		});
 	}
 	var body = j.staged.join("");
