@@ -18,13 +18,21 @@
 // Request: #<seq>:<op> with op one of (values URL-encoded):
 //   put:<key>:<value>   app:<key>:<value> (append)   del:<key>   dump:<k>   ping
 //   pc:<key>:<k>:<value> (piece k of a value, idempotent; 1.6.6; "bad op" on an older page)
+//   pc:<key>:<k>/<n>:<value> (piece k of n, 3.2.1 r1: the value is built aside and takes the old one's place at its last
+//     piece; pages from 1.6.6 to 3.2.1 read k alone, as parseInt stops at the "/")
 //   ver   get:<key>:<k>   (v2)
 //   net:<job>:<what>   stage:<job>:<k>:<piece>   job:<job>:<k>   drop:<job>   (v2, online codes)
 // Keys: r:<name> a route code, b:<name> its best time, p:<key> a setting; (v2) g:<name> a ghost,
 //   k:<code> the edit key of a route you published.
+// A write that doesn't fit (the page's storage is full, about 5 MB a site) answers "full" (3.2.1; an older page answered
+//   "err QuotaExceededError..."): a put keeps the value it had, and so does a value sent as k/n pieces, whichever piece
+//   doesn't fit (the pieces built aside go, freeing their room). Pieces without /n (games before 3.2.1 r1) go in place:
+//   piece 0 keeps the value before it, a later piece takes the value's earlier pieces away (a value cut short is no use).
+//   Games before 3.2.1 read any answer but "ok" as not saved, as they read the err.
 // Answer: title "BRS <seq> <reply>"; dump replies "d <k>/<n> <text>", the dump being
 //   "R <name> <best or -> <route code>" and "P <key> <value>" entries joined by " ~~ ", in pieces of 3800 characters
-//   (titles reach the game cut at 4096). get and job answer in the same pieces.
+//   (titles reach the game cut at 4096). get and job answer in the same pieces. A read's pieces all come from the dump
+//   built at its dump:0 (3.2.1), whatever is written between them.
 var KEY = /^[rbpgk]:[a-z0-9_]{1,40}$/, PIECE = 3800;
 var API = "https://api.boxrun.gg/v1";
 var JOB = /^[a-z0-9]{1,16}$/, MAX_JOBS = 8, STAGE_MAX = 460000, TRIES = 3, TIMEOUT = 20000;
@@ -42,6 +50,16 @@ function dump() {
 	}
 	return out.sort().join(" ~~ ");
 }
+// The dump a read is served from (3.2.1, w881's in-game pass): built at dump:0 and kept until the next request after
+// its last piece, so a write between two pieces (games from 1.6.6 to 3.2.1 send a setting queued while saving was off
+// there, once the first piece's answer turns saving on) can't shift the later pieces: one stored route was cut across
+// two and read as broken. A dump:k with no read kept (a page loaded again mid-read) is built fresh, as before.
+var dumpText = null, dumpEnded = false;
+function dumpPiece(k) {
+	if (k === 0 || dumpText === null) dumpText = dump();
+	dumpEnded = k + 1 >= Math.max(1, Math.ceil(dumpText.length / PIECE));
+	return pieces(dumpText, k);
+}
 function pieces(text, k) {
 	var n = Math.max(1, Math.ceil(text.length / PIECE));
 	return "d " + k + "/" + n + " " + text.substr(k * PIECE, PIECE);
@@ -50,7 +68,8 @@ function answer(op) {
 	var f = op.split(":"), what = f[0];
 	if (what === "ping") return "pong";
 	if (what === "ver") return "v2";
-	if (what === "dump") return pieces(dump(), parseInt(f[1], 10) || 0);
+	if (what === "dump") return dumpPiece(parseInt(f[1], 10) || 0);
+	if (dumpEnded) { dumpText = null; dumpEnded = false; }      // the read is over
 	if (what === "net" || what === "stage" || what === "job" || what === "drop") return online(f);
 	var key = f[1] + ":" + f[2];
 	if (!KEY.test(key)) return "bad key";
@@ -61,8 +80,8 @@ function answer(op) {
 	if (what === "pc") return piece(key, f[3], f.slice(4).join(":"));
 	var value = f.slice(3).join(":");
 	if (what === "put") localStorage.setItem(key, value);
-	else if (what === "app") localStorage.setItem(key, (localStorage.getItem(key) || "") + value);
-	else if (what === "del") { localStorage.removeItem(key); localStorage.removeItem("c:" + key); }
+	else if (what === "app") cutOnFull(key, function () { localStorage.setItem(key, (localStorage.getItem(key) || "") + value); });
+	else if (what === "del") { localStorage.removeItem(key); localStorage.removeItem("c:" + key); localStorage.removeItem("n:" + key); localStorage.removeItem("c:n:" + key); }
 	else return "bad op";
 	return "ok";
 }
@@ -71,15 +90,65 @@ function answer(op) {
 // when it's the next one (the count is kept under c:<key>), and one already in is answered "ok" again. The value is
 // stored as put: and app: store it, so older games read it.
 function piece(key, k, value) {
-	k = parseInt(k, 10);
-	if (!(k >= 0)) return "bad piece";
+	var kn = /^(\d+)(?:\/(\d+))?$/.exec(k);
+	if (!kn) return "bad piece";
+	k = parseInt(kn[1], 10);
+	var n = kn[2] ? parseInt(kn[2], 10) : 0;
+	if (kn[2] && !(k < n)) return "bad piece";
+	if (n > 1) return pieceAside(key, k, n, value);
 	var have = parseInt(localStorage.getItem("c:" + key), 10) || 0;
-	if (k === 0) { localStorage.setItem(key, value); localStorage.setItem("c:" + key, "1"); return "ok"; }
+	// piece 0: the count goes first, so a value that doesn't fit leaves the one before it whole (and no count that would
+	// pass the next pieces as already in). The count's own write failing puts the value before it back (review r1, finding
+	// 2: the new piece stayed, a prefix of the value, once removing the count had made just room for it)
+	if (k === 0) { keepOnFull(key, function () { localStorage.removeItem("c:" + key); localStorage.setItem(key, value); localStorage.setItem("c:" + key, "1"); }); return "ok"; }
 	if (k < have) return "ok";
 	if (k > have) return "gap " + have;
-	localStorage.setItem(key, (localStorage.getItem(key) || "") + value);
-	localStorage.setItem("c:" + key, String(k + 1));
+	cutOnFull(key, function () {
+		localStorage.setItem(key, (localStorage.getItem(key) || "") + value);
+		localStorage.setItem("c:" + key, String(k + 1));
+	});
 	return "ok";
+}
+// pc:<key>:<k>/<n> with n > 1 (3.2.1 r1, review finding 2): the pieces build up under n:<key> (count c:n:<key>, neither in
+// the dump), and the last one puts the whole value in the old one's place at once, so a value being replaced stays whole
+// until its new one is all in, and a piece that doesn't fit leaves it as it was (the pieces built aside go). The last
+// piece asked again after it went in (its answer lost) finds the value's count at n: "ok".
+function pieceAside(key, k, n, value) {
+	var ak = "n:" + key, ac = "c:" + ak, have = parseInt(localStorage.getItem(ac), 10) || 0;
+	// piece 0 also drops the old value's count: a last piece that comes after a failed build then can't pass as in
+	if (k === 0) { localStorage.removeItem(ak); localStorage.removeItem(ac); localStorage.removeItem("c:" + key); have = 0; }
+	else if (!have) return k === n - 1 && localStorage.getItem("c:" + key) === String(n) ? "ok" : "gap 0";
+	else if (k < have) return "ok";
+	else if (k > have) return "gap " + have;
+	var v = (k ? localStorage.getItem(ak) || "" : "") + value;
+	if (k < n - 1) {
+		try { localStorage.setItem(ak, v); localStorage.setItem(ac, String(k + 1)); }
+		catch (e) { if (isFull(e)) { localStorage.removeItem(ak); localStorage.removeItem(ac); } throw e; }
+		return "ok";
+	}
+	localStorage.removeItem(ak); localStorage.removeItem(ac);
+	keepOnFull(key, function () { localStorage.removeItem("c:" + key); localStorage.setItem(key, v); localStorage.setItem("c:" + key, String(n)); });
+	return "ok";
+}
+// a write that doesn't fit puts back the value key had (its count stays gone: no later piece passes as already in)
+function keepOnFull(key, write) {
+	var old = localStorage.getItem(key);
+	try { write(); } catch (e) {
+		if (isFull(e)) try { if (old === null) localStorage.removeItem(key); else localStorage.setItem(key, old); } catch (e2) { }
+		throw e;
+	}
+}
+// localStorage's own error when a write doesn't fit (Chrome and Steam's browser: QuotaExceededError, code 22; Firefox:
+// NS_ERROR_DOM_QUOTA_REACHED, 1014)
+function isFull(e) {
+	return !!e && (e.name === "QuotaExceededError" || e.name === "NS_ERROR_DOM_QUOTA_REACHED" || e.code === 22 || e.code === 1014 || /quota/i.test(String(e.message || e)));
+}
+// a later piece that doesn't fit: the value's earlier pieces go too, then the error goes on to handle()
+function cutOnFull(key, write) {
+	try { write(); } catch (e) {
+		if (isFull(e)) { localStorage.removeItem(key); localStorage.removeItem("c:" + key); }
+		throw e;
+	}
 }
 
 // ------------------------------------------------------------------------------------------- online codes (v2)
@@ -559,7 +628,9 @@ function call(j, method, path, body, key, ok, tries) {
 				if (r.status >= 500 || busy || (r.status === 429 && !(b && b.error))) return again((b && b.error || "server") + " " + (b && b.message || "the server had a problem"));
 				if (!r.ok || !b) return fail(j, (b && b.error || "server") + " " + (b && b.message || "odd answer from the server") +
 					(r.status === 429 ? " (" + (r.headers.get("retry-after") || "60") + " s)" : ""));
-				try { done(j, ok(b)); } catch (e) { fail(j, "server odd answer from the server"); }
+				// a write the answer needs that doesn't fit (pub's edit key; 3.2.1 r1, review finding 16): "full", so the game makes
+				// room and asks the same publish again, which the API answers with the same code and key (its idempotency key)
+				try { done(j, ok(b)); } catch (e) { fail(j, isFull(e) ? "full The save space is full. Delete routes you don't play, then SHARE again." : "server odd answer from the server"); }
 			});
 		}, function () { clearTimeout(timer); again("offline the online library can't be reached"); });
 }
@@ -568,9 +639,18 @@ function handle() {
 	var h = location.hash.slice(1), at = h.indexOf(":");
 	if (at < 0) return;
 	var seq = h.slice(0, at), reply;
-	try { reply = answer(decodeURIComponent(h.slice(at + 1))); } catch (e) { reply = "err " + e; }
+	try { reply = answer(decodeURIComponent(h.slice(at + 1))); } catch (e) { reply = isFull(e) ? "full" : "err " + e; }
 	document.title = "BRS " + seq + " " + reply;
 }
+// values built aside (n:<key> and its count c:n:<key>, pieceAside) left by a game that quit partway through a write:
+// cleared when the page loads, before it answers anything (review r2, finding 4: get, del and the dump don't reach
+// them, so room-making couldn't free them). A game whose page loads again mid-value hears "gap" and sends it again.
+function clearAside() {
+	var ks = [];
+	for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (/^(c:)?n:/.test(k)) ks.push(k); }
+	ks.forEach(function (k) { localStorage.removeItem(k); });
+}
+try { clearAside(); } catch (e) { }
 window.addEventListener("hashchange", handle);
 handle();
 </script>
