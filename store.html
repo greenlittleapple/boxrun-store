@@ -35,6 +35,11 @@
 //   built at its dump:0 (3.2.1), whatever is written between them.
 var KEY = /^[rbpgk]:[a-z0-9_]{1,40}$/, PIECE = 3800;
 var API = "https://api.boxrun.gg/v1";
+// The second save page (work/gg-fallback/REPORT.md, 11-26): the same page on a CloudFront address, for players whose
+// network blocks .gg sites, calls the API at API Gateway's own address. save.boxrun.gg and the staging store keep the
+// line above (the staging loaders swap that exact line for their cfg.txt's api=, so the test is on its value).
+if (/^https:\/\/api\.boxrun\.gg\//.test(API) && !/^(save\.boxrun\.gg|boxrungg\.github\.io)$/.test(location.hostname))
+	API = "https://jb7sar7xfh.execute-api.us-east-1.amazonaws.com/v1";
 var JOB = /^[a-z0-9]{1,16}$/, MAX_JOBS = 8, STAGE_MAX = 460000, TRIES = 3, TIMEOUT = 20000;
 var jobs = {}, order = [];
 function dump() {
